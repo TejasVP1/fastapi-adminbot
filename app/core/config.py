@@ -18,7 +18,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 import os
 
 # Define the Excel storage path
-EXCEL_STORAGE_PATH = os.getenv("EXCEL_STORAGE_PATH", "/home/praadnyah/AdminBot/fastapi-adminbot/excel_files")
+EXCEL_STORAGE_PATH = os.getenv("EXCEL_STORAGE_PATH", "/home/AdminBot/fastapi-adminbot/excel_files")
 
 class Config:
     DB_HOST = os.getenv("DB_HOST")

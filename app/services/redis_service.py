@@ -59,9 +59,18 @@ def get_from_redis(thread_id):
     thread_details = redis_client.hgetall(f"admin_thread:{thread_id}")
     conversations = redis_client.lrange(f"admin_thread:{thread_id}:conversations", 0, -1)
 
+
+    conversations_list = []
+    for conv in conversations:
+        conv_data = json.loads(conv)
+        excel_path = get_excel_path(conv_data["conversation_id"])
+        if excel_path:
+            conv_data["excel_path"] = excel_path
+        conversations_list.append(conv_data)
+
     thread_data = {
         "thread_details": thread_details,
-        "conversations": [json.loads(conv) for conv in conversations]
+        "conversations": conversations_list
     }
     return thread_data
 

@@ -5,7 +5,7 @@ from uuid import UUID
 
 class UserInputRequest(BaseModel):
     user_input: str
-    thread_id: Optional[UUID] = None  # Optional UUID field
+    thread_id: str = None  # Optional UUID field
     
 class ConversationRecord(BaseModel):
     conversation_id: str
@@ -14,6 +14,7 @@ class ConversationRecord(BaseModel):
     visualization: Optional[str] = None
     timestamp: str
     data_type: List[str]
+    excel_path: str
 
 class ThreadInsertRequest(BaseModel):
     thread_id: str

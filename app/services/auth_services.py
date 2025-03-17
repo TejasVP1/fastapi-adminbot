@@ -33,7 +33,7 @@ async def admin_signup(admin: AdminSignup):
         return {"error": "Admin already exists!"}
 
     hashed_password = hash_password(admin.password)
-    admin_data = {"email": admin.email, "password": hashed_password, "created_at": datetime.utcnow()}
+    admin_data = {"email": admin.email, "password": hashed_password, "name": admin.name, "created_at": datetime.utcnow()}
     admins_collection.insert_one(admin_data)
     return {"message": "Admin registered successfully!"}
 
