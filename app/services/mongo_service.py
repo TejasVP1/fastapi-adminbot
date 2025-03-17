@@ -43,7 +43,8 @@ def migrate_thread_to_mongo(thread_id):
                 "response": conv["response"],
                 "visualization": conv.get("visualization"),
                 "timestamp": conv["timestamp"],
-                "data_type": conv.get("data_type")
+                "data_type": conv.get("data_type"),
+                "excel_path": conv.get("excel_path")
             }
             conversations_collection.insert_one(conv_doc)
 
