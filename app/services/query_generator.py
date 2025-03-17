@@ -49,6 +49,23 @@ The emi table contains the following columns:
 - status (ENUM: 'PAID', 'OVERDUE', 'PENDING')
 - loan_id (Foreign Key referencing loan.loan_id)
 
+The users table has the following
+ - user_id (Primary key)
+ -address (address of the user)
+ -email (email of the user)
+ - is_active (whether his account is active or not, id is_active =1 then it is active)
+ - name  (name of the user)
+ - phone_number (phone number of the user)
+
+ The user_information table has the following
+ -id (user_information id , no need to disclose this)
+ -aadhar (aadhar number)
+ -cibil (CIBIL SCORE of the user)
+ -income_type ('UNEMPLOYED','SALARIED','SELF_EMPLOYED',)
+ -pan (pan number of the user)
+ -salary (salary of the user)
+ -user_id (foreign key referencing users.users.user_id)
+
 The loan table and emi table are connected through loan_id.
 
 Now, generate an SQL query based on this schema. Ensure that user_id is never disclosed in the query results and only the sql query is given with ; at the end. 
