@@ -6,16 +6,13 @@ from datetime import timedelta
 # Load environment variables from .env file
 load_dotenv()
 
-
 # MongoDB Configuration
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
 
-JWT_SECRET_KEY = "your_secret_key"  # Change this
+JWT_SECRET_KEY = "your_secret_key"  
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
-
-import os
 
 # Define the Excel storage path
 EXCEL_STORAGE_PATH = os.getenv("EXCEL_STORAGE_PATH", "/home/AdminBot/fastapi-adminbot/excel_files")
@@ -33,14 +30,14 @@ class Config:
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
-    
-
     MONGO_URI = os.getenv("MONGO_URI")
     MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
 
-    
-
-   
-
+    # Email configuration
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")  # Hardcoded admin email
+    EMAIL_HOST = os.getenv("EMAIL_HOST")
+    EMAIL_PORT = os.getenv("EMAIL_PORT")
+    EMAIL_USER = os.getenv("EMAIL_USER") # Your Gmail address
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD") # Your Gmail app password
 
 config = Config()

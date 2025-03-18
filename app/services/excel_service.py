@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from app.core.config import EXCEL_STORAGE_PATH
 from app.services.redis_service import store_excel_path, get_excel_path
+import logging
 
 # Ensure the storage directory exists
 os.makedirs(EXCEL_STORAGE_PATH, exist_ok=True)
@@ -16,6 +17,6 @@ async def generate_excel(conversation_id: str, data: list):
     try:
         df.to_excel(file_path, index=False)
         store_excel_path(conversation_id, file_path)  # Store path in Redis
-        print(f"✅ Excel generated: {file_path}")
+        logging.info(f"Excel generated: {file_path}")
     except Exception as e:
-        print(f"❌ Excel generation failed: {e}")
+        logging.error(f"Excel generation failed: {e}")

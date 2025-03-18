@@ -67,6 +67,7 @@ The users table has the following
  -user_id (foreign key referencing users.users.user_id)
 
 The loan table and emi table are connected through loan_id.
+If anything to do with disbursed_date or emi_date is asked, use MONTH(), YEAR(), DAY() etc and MySQL specific syntax and not other SQL formats. Always give in one line only even if it has multiple lines.
 
 Now, generate an SQL query based on this schema. Ensure that user_id is never disclosed in the query results and only the sql query is given with ; at the end. 
 """
