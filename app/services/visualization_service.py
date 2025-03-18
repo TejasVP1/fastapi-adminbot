@@ -1,4 +1,3 @@
-
 import google.generativeai as genai
 from app.core.config import config
 import pandas as pd
@@ -22,12 +21,9 @@ import logging
 import pandas as pd
 
 logger = logging.getLogger(__name__)
-
-
-
 def determine_x_y_columns(df, user_query):
     """
-    Ensures correct X and Y selection for rankings, trend analysis, and correlations.
+    Ensures correct X and Y selection for rankings, trend analysis, correlations, and percentage breakdowns.
     """
     query_lower = user_query.lower()
     numerical_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -35,9 +31,17 @@ def determine_x_y_columns(df, user_query):
     
     x_col, y_col = None, None  # Default empty values
 
-    ### ✅ 1. Handle Ranking Queries (Fix for Top Customers Query) ###
+    ### ✅ 1. Handle Percentage Breakdown Queries (New Fix) ###
+    if any(term in query_lower for term in ["percentage", "breakdown", "share"]):
+        if len(categorical_cols) == 1 and len(numerical_cols) == 1:
+            x_col = categorical_cols[0]  # Categorical column for labels
+            y_col = numerical_cols[0]  # Percentage/numeric column for values
+            logger.info(f"Detected percentage breakdown query. Using {x_col} for categories and {y_col} for values (Pie Chart).")
+            return x_col, y_col
+
+    ### ✅ 2. Ranking Queries (Fix for Top Customers Query) ###
     if any(term in query_lower for term in ["top", "highest", "largest", "most"]):
-        # **Fix:** Prioritize customer name for X-axis
+        # *Fix:* Prioritize customer name for X-axis
         if "name" in df.columns:
             x_col = "name"
         elif "customer_name" in df.columns:
@@ -45,42 +49,32 @@ def determine_x_y_columns(df, user_query):
         elif "user_id" in df.columns:
             x_col = "user_id"
 
-        # **Ensure Y is always a sum, total, or amount**
+        # *Ensure Y is always a sum, total, or amount*
         y_col = "total_loan_amount" if "total_loan_amount" in df.columns else "principal" if "principal" in df.columns else None
-    if any(term in query_lower for term in ["spread", "variance", "outliers", "distribution"]):
-        # **Fix:** Box plots require a numerical Y-axis, X can be None
-        y_col = "principal" if "principal" in df.columns else numerical_cols[0] if numerical_cols else None
 
+    ### ✅ 3. Loan Distribution Queries ###
     elif any(term in query_lower for term in ["distribution", "spread", "range", "frequency"]):
-        # **Fix:** Use principal for histogram if available
         if "principal" in df.columns:
             x_col = "principal"
         elif numerical_cols:
             x_col = numerical_cols[0]
+        y_col = None  # Histograms don’t need a Y-axis
 
-        # **Histogram doesn’t need a Y-axis**
-        y_col = None  
-
-    ### ✅ 2. Ranking Queries for Loans (Top Loans) ###
+    ### ✅ 4. Loan Ranking Queries ###
     elif any(term in query_lower for term in ["top loans", "largest loans", "biggest loans"]):
         x_col = "loan_id" if "loan_id" in df.columns else None
         y_col = "principal" if "principal" in df.columns else "loan_amount" if "loan_amount" in df.columns else None
 
-    ### ✅ 3. Trend Analysis ###
-    elif any(term in query_lower for term in ["trend", "monthly", "yearly", "over time", "history"]):
+    ### ✅ 5. Trend Analysis ###
+    if any(term in query_lower for term in ["trend", "growth", "over time", "monthly", "yearly", "history"]):
         if "year" in df.columns and "month" in df.columns:
-            df["year_month"] = pd.to_datetime(df["year"].astype(str) + "-" + df["month"].astype(str) + "-01")
-            x_col = "year_month"
-        else:
-            x_col = "disbursed_date" if "disbursed_date" in df.columns else None
-        
-        y_col = "loan_count" if "loan_count" in df.columns else "COUNT(*)" if "COUNT(*)" in df.columns else "principal"
+            df["date"] = pd.to_datetime(df["year"].astype(str) + "-" + df["month"].astype(str) + "-01")
+            x_col = "date"
+        elif "disbursed_date" in df.columns:
+            x_col = "disbursed_date"
+        y_col = "loan_count" if "loan_count" in df.columns else "principal" if "principal" in df.columns else None
 
-    if "loan_amount_range" in df.columns:
-        x_col = "loan_amount_range"  # **Fix:** Treat as categorical X-axis
-        y_col = "loan_count" if "loan_count" in df.columns else None 
-
-    ### ✅ 4. Correlation Queries ###
+    ### ✅ 6. Correlation Queries ###
     elif "correlation" in query_lower or "relationship" in query_lower:
         correlation_terms = ["between", "vs", "and"]
         x_candidate, y_candidate = None, None
@@ -99,16 +93,21 @@ def determine_x_y_columns(df, user_query):
         if (not y_col or x_col == y_col) and len(numerical_cols) > 1:
             y_col = next((col for col in numerical_cols if col != x_col), None)
 
-    ### ✅ 5. General Numerical Data Queries ###
+    elif "outliers" in query_lower:
+        # *Fix:* Box plots only need a Y-axis
+        y_col = next((col for col in ["principal", "emi_amount"] if col in df.columns), None)
+        x_col = next((col for col in categorical_cols), None)  # Optional grouping by category
+
+    ### ✅ 7. General Numerical Data Queries ###
     elif numerical_cols:
         y_col = "principal" if "principal" in df.columns else numerical_cols[0]
         x_col = next((col for col in categorical_cols if col not in [y_col]), None)
 
-    ### ✅ 6. Ensure X and Y Are Distinct ###
+    ### ✅ 8. Ensure X and Y Are Distinct ###
     if x_col == y_col:
         y_col = next((col for col in numerical_cols if col != x_col), None)
 
-    ### ✅ 7. Emergency Fallbacks ###
+    ### ✅ 9. Emergency Fallbacks ###
     if not x_col:
         x_col = "loan_id" if "loan_id" in df.columns else None
     if not y_col and numerical_cols:
@@ -120,7 +119,6 @@ def determine_x_y_columns(df, user_query):
 
     logger.info(f"Selected X: {x_col}, Y: {y_col} for query: {user_query}")
     return x_col, y_col
-
 
 def get_chart_suggestion(data: List[Dict[str, Any]], user_query: str) -> str:
     """
@@ -164,7 +162,7 @@ def get_chart_suggestion(data: List[Dict[str, Any]], user_query: str) -> str:
         return "histogram"
 
     # ✅ 7. Outlier & Spread Analysis (e.g., "what is the distribution of loan amounts?")
-    if any(term in query_lower for term in ["spread", "variance", "distribution", "outliers"]):
+    if any(term in query_lower for term in ["spread", "variance", "outliers"]):
         return "box"
 
     # ✅ 8. Comparison Between Categories (e.g., "loan approvals by region")
@@ -216,13 +214,13 @@ def generate_plotly_chart(data: List[Dict[str, Any]], chart_type: str, user_quer
             if pd.api.types.is_datetime64_dtype(df[x_col]):
                 df_sorted = df.sort_values(by=x_col)
                 fig = px.line(df_sorted, x=x_col, y=y_col,
-                            title=f"{y_col.replace('_', ' ').title()} Trend by {x_col.replace('_', ' ').title()}",
+                            title=f"{y_col.replace('', ' ').title()} Trend by {x_col.replace('', ' ').title()}",
                             labels={x_col: x_col.replace('_', ' ').title(), 
                                     y_col: y_col.replace('_', ' ').title()})
             else:
                 grouped_df = df.groupby(x_col)[y_col].mean().reset_index()
                 fig = px.line(grouped_df, x=x_col, y=y_col,
-                            title=f"{y_col.replace('_', ' ').title()} by {x_col.replace('_', ' ').title()}",
+                            title=f"{y_col.replace('', ' ').title()} by {x_col.replace('', ' ').title()}",
                             labels={x_col: x_col.replace('_', ' ').title(), 
                                     y_col: y_col.replace('_', ' ').title()})
         if chart_type == "bar":
@@ -237,13 +235,19 @@ def generate_plotly_chart(data: List[Dict[str, Any]], chart_type: str, user_quer
         elif chart_type == "scatter":
             fig = px.scatter(df, x=x_col, y=y_col, title=f"{y_col.title()} vs {x_col.title()}")
 
+        elif chart_type == "box":
+            if x_col and y_col:  # Grouped Box Plot (e.g., Loan Type vs Principal)
+                fig = px.box(df, x=y_col, y=x_col, title=f"Distribution of {y_col.title()} by {x_col.title()}")
+            else:  # Simple Box Plot (just a single numerical column)
+                fig = px.box(df, y=y_col, title=f"Distribution of {y_col.title()}")
         elif chart_type == "bar_stacked":
             fig = px.bar(df, x=x_col, y=y_col, color=x_col, title=f"{y_col.title()} by {x_col.title()} (Stacked)")
 
         else:
             fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col.title()} by {x_col.title()}")
             
-        # fig.update_layout(yaxis=dict(title="Interest Rate (%)", range=[0, 15]))
+        #fig.update_layout(yaxis=dict(title="Interest Rate (%)", range=[0, 15]))
+
 
         # Save the chart
         chart_filename = f"{uuid.uuid4().hex}.png"
