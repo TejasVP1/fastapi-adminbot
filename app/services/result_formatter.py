@@ -25,7 +25,7 @@ def format_results(results):
     """Formats SQL results into readable text using Gemini."""
     try:
         formatted_data = json.dumps(results, indent=2, default=serialize_dates)  # Convert non-serializable types
-        logging.info(formatted_data)
+        # logging.info(formatted_data)
         prompt = f"Format the following database query results into a readable sentence with insights:\n\n{formatted_data}"
         response = model.generate_content(prompt)
         logging.info(f"Chatbot response: {response.text.strip()}")
