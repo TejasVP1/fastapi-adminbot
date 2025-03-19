@@ -20,6 +20,7 @@ import traceback
 from datetime import datetime, timedelta
 from app.core.config import config
 from app.services.database import db
+from pathlib import Path
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -180,10 +181,28 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
         logger.error(f"Unhandled error in process_user_input: {str(e)}")
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="An unexpected error occurred processing your request")
+@router.get("/latest-chart/")
+async def get_latest_chart():
+    """Fetch the most recently generated chart"""
+    try:
+        # ✅ Get the latest chart file by modification time
+        chart_files = sorted(Path(CHARTS_DIR).glob("*.png"), key=os.path.getmtime, reverse=True)
 
+        if not chart_files:
+            raise HTTPException(status_code=404, detail="No charts found")
+
+        latest_chart = chart_files[0].name  # Get the latest file's name
+
+        # ✅ Construct full URL for frontend
+        chart_url = f"http://127.0.0.1:8000/charts/{latest_chart}"
+        return {"chart_image_url": chart_url}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving latest chart: {str(e)}")
 @router.get("/download-excel/{conversation_id}/")
 async def download_excel(conversation_id: str, admin: dict = Depends(get_current_admin)):
     """Endpoint to download an Excel file based on conversation ID with authorization check"""
+
     try:
         logger.info(f"Excel download requested for conversation {conversation_id} by admin {admin['email']}")
         

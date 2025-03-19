@@ -1,4 +1,4 @@
-import logging
+'''import logging
 import google.generativeai as genai
 from app.core.config import config
 import seaborn as sns
@@ -118,4 +118,4 @@ def generate_graph(query_results: pd.DataFrame, graph_details: dict):
     plt.title(f"{chart_type} Chart for {x_axis} vs {y_axis}")
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.show()
+    plt.show()'''

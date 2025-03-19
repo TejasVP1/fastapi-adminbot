@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints import router
+import os
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Loan Chatbot API")
 
@@ -19,6 +21,10 @@ app.add_middleware(
 )
 
 app.include_router(router)
+CHARTS_DIR = os.getenv("CHARTS_DIR", "/home/AdminBot/fastapi-adminbot/chart")
+
+# ✅ Serve static files from CHARTS_DIR
+app.mount("/charts", StaticFiles(directory=CHARTS_DIR), name="charts")
 
 if __name__ == "__main__":
     import uvicorn
