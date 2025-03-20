@@ -17,8 +17,6 @@ os.makedirs(CHARTS_DIR, exist_ok=True)
 genai.configure(api_key=config.GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-import logging
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 def determine_x_y_columns(df, user_query):
@@ -31,7 +29,7 @@ def determine_x_y_columns(df, user_query):
     
     x_col, y_col = None, None  # Default empty values
 
-    ### ✅ 1. Handle Percentage Breakdown Queries (New Fix) ###
+    # 1. Handle Percentage Breakdown Queries (New Fix) ###
     if any(term in query_lower for term in ["percentage", "breakdown", "share"]):
         if len(categorical_cols) == 1 and len(numerical_cols) == 1:
             x_col = categorical_cols[0]  # Categorical column for labels
@@ -39,7 +37,7 @@ def determine_x_y_columns(df, user_query):
             logger.info(f"Detected percentage breakdown query. Using {x_col} for categories and {y_col} for values (Pie Chart).")
             return x_col, y_col
 
-    ### ✅ 2. Ranking Queries (Fix for Top Customers Query) ###
+    # 2. Ranking Queries (Fix for Top Customers Query) ###
     if any(term in query_lower for term in ["top", "highest", "largest", "most"]):
         # *Fix:* Prioritize customer name for X-axis
         if "name" in df.columns:
@@ -52,7 +50,7 @@ def determine_x_y_columns(df, user_query):
         # *Ensure Y is always a sum, total, or amount*
         y_col = "total_loan_amount" if "total_loan_amount" in df.columns else "principal" if "principal" in df.columns else None
 
-    ### ✅ 3. Loan Distribution Queries ###
+    # 3. Loan Distribution Queries ###
     elif any(term in query_lower for term in ["distribution", "spread", "range", "frequency"]):
         if "principal" in df.columns:
             x_col = "principal"
@@ -60,12 +58,12 @@ def determine_x_y_columns(df, user_query):
             x_col = numerical_cols[0]
         y_col = None  # Histograms don’t need a Y-axis
 
-    ### ✅ 4. Loan Ranking Queries ###
+    #4. Loan Ranking Queries ###
     elif any(term in query_lower for term in ["top loans", "largest loans", "biggest loans"]):
         x_col = "loan_id" if "loan_id" in df.columns else None
         y_col = "principal" if "principal" in df.columns else "loan_amount" if "loan_amount" in df.columns else None
 
-    ### ✅ 5. Trend Analysis ###
+    # 5. Trend Analysis ###
     if any(term in query_lower for term in ["trend", "growth", "over time", "monthly", "yearly", "history"]):
         if "year" in df.columns and "month" in df.columns:
             df["date"] = pd.to_datetime(df["year"].astype(str) + "-" + df["month"].astype(str) + "-01")
@@ -74,7 +72,7 @@ def determine_x_y_columns(df, user_query):
             x_col = "disbursed_date"
         y_col = "loan_count" if "loan_count" in df.columns else "principal" if "principal" in df.columns else None
 
-    ### ✅ 6. Correlation Queries ###
+    # 6. Correlation Queries ###
     elif "correlation" in query_lower or "relationship" in query_lower:
         correlation_terms = ["between", "vs", "and"]
         x_candidate, y_candidate = None, None
@@ -98,16 +96,16 @@ def determine_x_y_columns(df, user_query):
         y_col = next((col for col in ["principal", "emi_amount"] if col in df.columns), None)
         x_col = next((col for col in categorical_cols), None)  # Optional grouping by category
 
-    ### ✅ 7. General Numerical Data Queries ###
+    ## 7. General Numerical Data Queries ###
     elif numerical_cols:
         y_col = "principal" if "principal" in df.columns else numerical_cols[0]
         x_col = next((col for col in categorical_cols if col not in [y_col]), None)
 
-    ### ✅ 8. Ensure X and Y Are Distinct ###
+    # 8. Ensure X and Y Are Distinct ###
     if x_col == y_col:
         y_col = next((col for col in numerical_cols if col != x_col), None)
 
-    ### ✅ 9. Emergency Fallbacks ###
+    ###  9. Emergency Fallbacks ###
     if not x_col:
         x_col = "loan_id" if "loan_id" in df.columns else None
     if not y_col and numerical_cols:
@@ -124,9 +122,7 @@ def get_chart_suggestion(data: List[Dict[str, Any]], user_query: str) -> str:
     """
     Determines the best chart type based on the query intent and data structure.
 
-    - Ensures charts are suggested for key insights like trends, comparisons, and distributions.
-    - Uses bar charts for rankings, line charts for trends, pie charts for distributions, and more.
-    - Includes scatter plots, histograms, heatmaps, and box plots for deeper analysis.
+    
     """
     if not data:
         logger.warning("Empty data provided for chart suggestion")
@@ -137,39 +133,39 @@ def get_chart_suggestion(data: List[Dict[str, Any]], user_query: str) -> str:
     categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
     query_lower = user_query.lower()
 
-    # ✅ 1. Rankings (e.g., "top loans", "highest disbursed loans")
+    #  1. Rankings (e.g., "top loans", "highest disbursed loans")
     if any(term in query_lower for term in ["top", "highest", "largest", "disbursed", "loan amount"]):
         return "bar_horizontal" if len(df) > 10 else "bar"
 
-    # ✅ 2. Trend Analysis (e.g., "monthly loan disbursement trend")
+    #  2. Trend Analysis (e.g., "monthly loan disbursement trend")
     if any(term in query_lower for term in ["trend", "history", "over time", "monthly", "yearly", "growth"]):
         return "line"
 
-    # ✅ 3. Distribution & Shares (e.g., "loan type distribution")
+    #  3. Distribution & Shares (e.g., "loan type distribution")
     if any(term in query_lower for term in ["distribution", "breakdown", "share", "percentage"]):
         return "pie" if len(categorical_cols) > 0 else "bar_stacked"
 
-    # ✅ 4. Correlation & Relationships (e.g., "correlation between tenure and salary")
+    #  4. Correlation & Relationships (e.g., "correlation between tenure and salary")
     if len(numerical_cols) >= 2 and any(term in query_lower for term in ["relationship", "correlation", "vs", "between"]):
         return "scatter"
 
-    # ✅ 5. Loan Amount & Principal Analysis (e.g., "loan amounts over time")
+    # 5. Loan Amount & Principal Analysis (e.g., "loan amounts over time")
     if any(term in query_lower for term in ["loan amount", "principal", "disbursed amount", "total loan"]):
         return "bar"
 
-    # ✅ 6. Frequency Distribution (e.g., "how many customers have a loan above 50k?")
+    #  6. Frequency Distribution (e.g., "how many customers have a loan above 50k?")
     if any(term in query_lower for term in ["frequency", "how many", "count", "distribution"]):
         return "histogram"
 
-    # ✅ 7. Outlier & Spread Analysis (e.g., "what is the distribution of loan amounts?")
+    #  7. Outlier & Spread Analysis (e.g., "what is the distribution of loan amounts?")
     if any(term in query_lower for term in ["spread", "variance", "outliers"]):
         return "box"
 
-    # ✅ 8. Comparison Between Categories (e.g., "loan approvals by region")
+    # 8. Comparison Between Categories (e.g., "loan approvals by region")
     if len(categorical_cols) >= 2 and any(term in query_lower for term in ["comparison", "matrix", "relationship"]):
         return "heatmap"
 
-    # ✅ 9. Default Fallback - Use Bar Chart if No Other Match
+    #  9. Default Fallback - Use Bar Chart if No Other Match
     return "bar"
 
 
