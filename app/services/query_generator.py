@@ -1,5 +1,8 @@
+import re
 import logging
 import google.generativeai as genai
+from transformers import pipeline
+from thefuzz import fuzz  # For fuzzy matching
 from app.core.config import config
 from app.services.redis_service import get_last_n_conversations
 
@@ -10,16 +13,71 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Load a Zero-Shot Classification Model
+classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+# **VALID TOPICS**: Queries should be related to these topics.
+VALID_TOPICS = [
+    "loan details", "emi payment", "interest rate", "loan tenure", "loan type", "cibil score",
+    "disbursed loans", "pending loans", "overdue emi", "user information", "banking details",
+    "financial history", "monthly emi", "loan principal", "emi due date"
+]
+
+# **Sensitive keywords** (strictly forbidden)
+SENSITIVE_KEYWORDS = ["cvv", "password", "aadhar", "pan"]
+
+# **Restricted SQL operations** (only SELECT queries allowed)
+RESTRICTED_KEYWORDS = ["insert", "update", "delete", "drop", "alter"]
+
+
+def fuzzy_match(query: str, valid_topics: list, threshold: int = 80) -> bool:
+    """Returns True if the query meaningfully matches a valid topic using fuzzy matching."""
+    return any(fuzz.partial_ratio(query.lower(), topic.lower()) >= threshold for topic in valid_topics)
+
+
+def classify_query(user_input: str) -> str:
+    """Classifies the user query using zero-shot NLP and rule-based filtering."""
+
+    # **1️⃣ Check for sensitive data**
+    if any(re.search(rf"\b{kw}\b", user_input, re.IGNORECASE) for kw in SENSITIVE_KEYWORDS):
+        return "sensitive"
+
+    # **2️⃣ Check for restricted SQL commands**
+    if any(re.search(rf"\b{kw}\b", user_input, re.IGNORECASE) for kw in RESTRICTED_KEYWORDS):
+        return "restricted"
+
+    # **3️⃣ Check if query matches valid topics (fuzzy matching)**
+    if fuzzy_match(user_input, VALID_TOPICS):
+        return "valid"
+
+    # **4️⃣ NLP-Based Classification (Fallback)**
+    result = classifier(user_input, ["valid", "unwanted", "restricted", "sensitive"])
+    classification = result["labels"][0].lower()
+
+    # **5️⃣ Explicitly return "unwanted" if NLP also marks it as such**
+    if classification in ["unwanted", "restricted", "sensitive"]:
+        return classification
+
+    # **If NLP doesn't classify it explicitly as valid, treat it as unwanted**
+    return "unwanted"
+
+
+
 def generate_sql(user_input: str, thread_id: str = None) -> str:
     """Generates SQL query using Gemini AI with context from previous user queries."""
 
-    # Fetch last 5 user queries from Redis (if available)
-    previous_queries = get_last_n_conversations(thread_id, n=5) if thread_id else []
+    # **Step 1: NLP Classification Before Gemini**
+    classification = classify_query(user_input)
 
-    # Construct context string
+    if classification in ["unwanted", "restricted", "sensitive"]:
+        logging.info(f"Query classified as {classification}.")
+        return classification  # Return classification result directly
+
+    # **Step 2: Fetch Last 5 Conversations for Context**
+    previous_queries = get_last_n_conversations(thread_id, n=5) if thread_id else []
     context_text = "\n".join(previous_queries) if previous_queries else "No previous queries."
 
-    # Instruction for Gemini
+    # **Step 3: Gemini Processing (Your Prompt Stays Unchanged)**
     system_instruction = (
         "You are an AI assistant that converts user queries into SQL queries. "
         "You must follow these rules:\n"
@@ -80,16 +138,15 @@ Now, generate an SQL query based on this schema. Ensure that user_id is never di
         f"{user_input}\n"
     )
 
-    # Log the context being sent to Gemini
-    logging.info(f"Thread ID: {thread_id}")
-    logging.info(f"User Input: {user_input}")
-    logging.info(f"Previous Queries (Context): {previous_queries}")
-
-    # Generate SQL query using Gemini
+    # **Step 4: Call Gemini**
     response = model.generate_content([system_instruction])
     output = response.text.strip().strip("`").strip("sql").strip()
 
-    # Log the generated SQL query
-    logging.info(f"Generated SQL: {output}")
+    # **Step 5: Final Validation (Gemini Check)**
+    if output.lower() in ["unwanted", "restricted", "sensitive"]:
+        logging.info(f"Gemini flagged query as {output}.")
+        return output  # Return Gemini’s classification if flagged
 
+    # **Log & Return Final SQL**
+    logging.info(f"Generated SQL: {output}")
     return output
