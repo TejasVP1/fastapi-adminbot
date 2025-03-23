@@ -1,10 +1,13 @@
 import re
 import logging
 import google.generativeai as genai
-from transformers import pipeline
+import spacy
 from thefuzz import fuzz  # For fuzzy matching
 from app.core.config import config
 from app.services.redis_service import get_last_n_conversations
+
+# Load spaCy NLP model
+nlp = spacy.load("en_core_web_sm")
 
 # Configure Gemini API
 genai.configure(api_key=config.GEMINI_API_KEY)
@@ -13,58 +16,51 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Load a Zero-Shot Classification Model
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
-
-# **VALID TOPICS**: Queries should be related to these topics.
+# **Valid Loan-Related Topics**
 VALID_TOPICS = [
     "loan details", "emi payment", "interest rate", "loan tenure", "loan type", "cibil score",
     "disbursed loans", "pending loans", "overdue emi", "user information", "banking details",
     "financial history", "monthly emi", "loan principal", "emi due date"
 ]
 
-# **Sensitive keywords** (strictly forbidden)
-SENSITIVE_KEYWORDS = ["cvv", "password", "aadhar", "pan"]
-
 # **Restricted SQL operations** (only SELECT queries allowed)
-RESTRICTED_KEYWORDS = ["insert", "update", "delete", "drop", "alter"]
+RESTRICTED_KEYWORDS = ["insert", "update", "delete", "drop", "alter", "modify", "change", "set"]
 
+# **Sensitive keywords** (strictly forbidden)
+SENSITIVE_KEYWORDS = ["cvv", "password", "aadhar", "pan", "account number"]
 
 def fuzzy_match(query: str, valid_topics: list, threshold: int = 80) -> bool:
     """Returns True if the query meaningfully matches a valid topic using fuzzy matching."""
     return any(fuzz.partial_ratio(query.lower(), topic.lower()) >= threshold for topic in valid_topics)
 
-
 def classify_query(user_input: str) -> str:
-    """Classifies the user query using zero-shot NLP and rule-based filtering."""
+    """Classifies the user query using NLP, regex, and fuzzy matching."""
 
-    # **1️⃣ Check for sensitive data**
-    if any(re.search(rf"\b{kw}\b", user_input, re.IGNORECASE) for kw in SENSITIVE_KEYWORDS):
+    # **1️⃣ NLP Analysis Using spaCy**
+    doc = nlp(user_input.lower())
+
+    # **2️⃣ Check for Sensitive Data**
+    if any(word in user_input.lower() for word in SENSITIVE_KEYWORDS):
         return "sensitive"
 
-    # **2️⃣ Check for restricted SQL commands**
-    if any(re.search(rf"\b{kw}\b", user_input, re.IGNORECASE) for kw in RESTRICTED_KEYWORDS):
+    # **3️⃣ Check for Restricted SQL Commands**
+    if any(word in user_input.lower() for word in RESTRICTED_KEYWORDS):
         return "restricted"
 
-    # **3️⃣ Check if query matches valid topics (fuzzy matching)**
+    # **4️⃣ Check if Query Matches Valid Topics (Fuzzy Matching)**
     if fuzzy_match(user_input, VALID_TOPICS):
         return "valid"
 
-    # **4️⃣ NLP-Based Classification (Fallback)**
-    result = classifier(user_input, ["valid", "unwanted", "restricted", "sensitive"])
-    classification = result["labels"][0].lower()
+    # **5️⃣ Identify "Modify" or Non-SELECT Actions in NLP**
+    for token in doc:
+        if token.lemma_ in ["modify", "change", "update", "edit", "set"]:
+            return "restricted"
 
-    # **5️⃣ Explicitly return "unwanted" if NLP also marks it as such**
-    if classification in ["unwanted", "restricted", "sensitive"]:
-        return classification
-
-    # **If NLP doesn't classify it explicitly as valid, treat it as unwanted**
+    # **6️⃣ If No Match, It's Unwanted**
     return "unwanted"
 
-
-
 def generate_sql(user_input: str, thread_id: str = None) -> str:
-    """Generates SQL query using Gemini AI with context from previous user queries."""
+    """Generates SQL query using Gemini AI with proper classification checks."""
 
     # **Step 1: NLP Classification Before Gemini**
     classification = classify_query(user_input)

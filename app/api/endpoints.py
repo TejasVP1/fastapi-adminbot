@@ -48,7 +48,7 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
         admin_id = admin["admin_id"]        
         # Generate SQL from user input
         try:
-            sql_query = generate_sql(request.user_input, request.thread_id if hasattr(request, "thread_id") else None)
+            sql_query = generate_sql(request.user_input + "details", request.thread_id if hasattr(request, "thread_id") else None)
         except Exception as e:
             raise HTTPException(status_code=500, detail="Failed to generate SQL query")
 
