@@ -57,7 +57,7 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
             return {"message": "I will answer only loan-related questions."}
         elif sql_query.lower() == "restricted":
             return {"message": "You can only read the data; modifications or creations are not allowed."}
-        elif sql_query.lower() == "ensitive":
+        elif sql_query.lower() == "sensitive":
             return {"message": "I won't provide any sensitive data of users."}
 
         elif sql_query.lower().startswith("select"):
@@ -74,13 +74,22 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
             #     logger.debug(traceback.format_exc())
             #     raise HTTPException(status_code=500, detail="Failed to generate chart")
             # Format results
-            try:
-                formatted_response = format_results(query_results,request.user_input)
+            if(request.answer_type=="insights"):
+                print("tete")
+                try:
+                    formatted_response = format_results(query_results,request.user_input)
+                    tables, cols = extract_tables_and_columns(sql_query)
+                    logger.debug(f"Extracted tables: {tables}, columns: {cols}")
+                except Exception as e:
+                    logger.debug(traceback.format_exc())
+                    raise HTTPException(status_code=500, detail="Failed to format query results")
+                
+            else:
                 tables, cols = extract_tables_and_columns(sql_query)
-                logger.debug(f"Extracted tables: {tables}, columns: {cols}")
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-                raise HTTPException(status_code=500, detail="Failed to format query results")
+                formatted_response = "You can download the Excel File"
+
+        
+            
 
             conversation_id = generate_id()
             logger.debug(f"Generated conversation ID: {conversation_id}")

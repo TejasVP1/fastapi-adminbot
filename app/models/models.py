@@ -5,6 +5,7 @@ from uuid import UUID
 
 class UserInputRequest(BaseModel):
     user_input: str
+    answer_type:str
     thread_id: str = None  # Optional UUID field
     
 class ConversationRecord(BaseModel):
