@@ -1,6 +1,9 @@
 from pymongo import MongoClient
 from app.core.config import config  
 from datetime import datetime
+import pytz  # Add this for timezone conversion
+
+IST = pytz.timezone("Asia/Kolkata") 
 
 # Initialize MongoDB connection
 mongo_client = MongoClient(config.MONGO_URI)
@@ -10,28 +13,26 @@ threads_collection = db["threads"]
 conversations_collection = db["conversations"]
 
 def get_conversations_by_thread(admin_id: str, thread_id: str, page: int = 1, limit: int = 10):
-    """
-    Retrieve paginated conversations for a given thread_id and admin_id, sorted from latest to earliest.
-    """
-    query_filter = {"admin_id": admin_id, "thread_id": thread_id}  # Ensure correct filtering
-
-    # Calculate how many documents to skip based on page number
+    query_filter = {"admin_id": admin_id, "thread_id": thread_id}  
     skip_count = (page - 1) * limit  
 
-    # Fetch paginated conversations sorted by timestamp (latest first)
     conversations = list(
         conversations_collection.find(
             query_filter, 
             {"_id": 0, "thread_id": 0, "admin_id": 0, "data_type": 0}
         )
-        .sort("timestamp", -1)  # Sort by latest first
-        .skip(skip_count)       # Skip past pages
-        .limit(limit)           # Limit per page
+        .sort("timestamp", -1)
+        .skip(skip_count)
+        .limit(limit)
     )
 
-    # Get total count for pagination metadata
+    # Convert timestamps to IST
+    for convo in conversations:
+        if "timestamp" in convo:
+            convo["timestamp"] = datetime.fromisoformat(convo["timestamp"]).replace(tzinfo=pytz.utc).astimezone(IST).isoformat()
+
     total_count = conversations_collection.count_documents(query_filter)
-    total_pages = (total_count + limit - 1) // limit  # Calculate total pages
+    total_pages = (total_count + limit - 1) // limit  
 
     return {
         "page": page,
@@ -40,22 +41,25 @@ def get_conversations_by_thread(admin_id: str, thread_id: str, page: int = 1, li
         "total_conversations": total_count,
         "conversations": conversations
     }
-
-
 def get_threads_by_admin(admin_id: str, page: int = 1, limit: int = 10):
-    """
-    Retrieve paginated thread IDs and chat names for a given admin.
-    """
-    skip = (page - 1) * limit  # Calculate offset for pagination
+    skip = (page - 1) * limit  # Calculate offset
 
-    total_threads = threads_collection.count_documents({"admin_id": admin_id})  # Total count
+    total_threads = threads_collection.count_documents({"admin_id": admin_id})  
 
     threads_cursor = threads_collection.find(
         {"admin_id": admin_id}, 
-        {"thread_id": 1, "chat_name": 1, "_id": 0}
+        {"thread_id": 1, "chat_name": 1, "start_timestamp": 1, "end_timestamp": 1, "_id": 0}
     ).skip(skip).limit(limit)
 
-    threads = list(threads_cursor)  # Convert cursor to list
+    threads = []
+    for thread in threads_cursor:
+        # Convert stored timestamps to IST
+        if "start_timestamp" in thread:
+            thread["start_timestamp"] = datetime.fromisoformat(thread["start_timestamp"]).replace(tzinfo=pytz.utc).astimezone(IST).isoformat()
+        if "end_timestamp" in thread and thread["end_timestamp"]:
+            thread["end_timestamp"] = datetime.fromisoformat(thread["end_timestamp"]).replace(tzinfo=pytz.utc).astimezone(IST).isoformat()
+        
+        threads.append(thread)
 
     return {
         "threads": threads,
