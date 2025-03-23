@@ -280,7 +280,7 @@ async def request_otp(background_tasks: BackgroundTasks):
         logger.debug("OTP generated successfully")
         
         # Store OTP in Redis with expiration time (5 minutes)
-        expiry_seconds = 2 * 60  # 2 minutes in seconds
+        expiry_seconds = 1 * 60  # 2 minutes in seconds
         
         try:
             # Create OTP data to store
