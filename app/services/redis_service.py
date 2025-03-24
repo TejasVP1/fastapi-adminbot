@@ -1,6 +1,7 @@
 import redis
 import json
-from app.core.config import config
+from app.core.config import config , EXCEL_STORAGE_PATH
+import os
 
 # Initialize Redis client using values from config
 redis_client = redis.Redis(
@@ -86,9 +87,16 @@ def store_excel_path(conversation_id: str, file_path: str, ttl=10800):
     redis_client.expire(f"excel:{conversation_id}", ttl)
 
 # Function to retrieve the Excel file path from Redis
-def get_excel_path(conversation_id: str):
-    """Retrieve the Excel file path from Redis."""
-    return redis_client.get(f"excel:{conversation_id}")
+# def get_excel_path(conversation_id: str):
+#     """Retrieve the Excel file path from Redis."""
+#     return redis_client.get(f"excel:{conversation_id}")
+
+def get_excel_path(conversation_id: str) -> str:
+    """
+    Generate the file path for the Excel file based on the conversation ID.
+    """
+    print(os.path.join(EXCEL_STORAGE_PATH, f"{conversation_id}.xlsx"))
+    return os.path.join(EXCEL_STORAGE_PATH, f"{conversation_id}.xlsx")
 
 def get_last_n_conversations(thread_id: str, n: int = 5):
     """Fetch last N user queries from Redis for a given thread."""
