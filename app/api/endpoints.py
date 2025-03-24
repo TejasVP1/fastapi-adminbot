@@ -10,10 +10,11 @@ from app.core.security import get_current_admin
 from app.services.visualization_service import get_chart_suggestion, generate_plotly_chart
 from app.services.redis_service import *
 from app.services.mongo_service import *
-from app.services.excel_service import generate_excel, get_excel_path
+from app.services.excel_service import generate_excel, get_excel_path  # Ensure this still creates the Excel file
 from app.services.extract_tables_service import *
 from app.core.config import *
 from app.core.helper import *
+from app.services.Excel_via_mail import send_email_with_attachment
 import os
 import logging
 import traceback
@@ -24,6 +25,7 @@ from app.services.database import db
 # Configure logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
 
 @router.post("/admin/login/", response_model=TokenResponse)
 async def login(admin: AdminLogin):
@@ -41,11 +43,14 @@ async def login(admin: AdminLogin):
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error during login")
 
+
 @router.post("/generate-response/")
-async def process_user_input(request: UserInputRequest, admin: dict = Depends(get_current_admin)):
+async def process_user_input(request: UserInputRequest, background_tasks: BackgroundTasks, admin: dict = Depends(get_current_admin)):
     """Process user query, generate SQL, execute query and return formatted results with visualization"""
     try:
-        admin_id = admin["admin_id"]        
+        admin_id = admin["admin_id"]
+        admin_email = admin["email"]
+
         # Generate SQL from user input
         try:
             sql_query = generate_sql(request.user_input + "details", request.thread_id if hasattr(request, "thread_id") else None)
@@ -67,15 +72,8 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
             except Exception as e:
                 logger.debug(traceback.format_exc())
                 raise HTTPException(status_code=500, detail="Failed to execute database query")
-            # try:
-            #     chart_type = get_chart_suggestion(query_results,request.user_input)
-            #     chart_img = generate_plotly_chart(query_results,chart_type,request.user_input)
-            # except Exception as e:
-            #     logger.debug(traceback.format_exc())
-            #     raise HTTPException(status_code=500, detail="Failed to generate chart")
-            # Format results
+
             if(request.answer_type=="insights"):
-                print("tete")
                 try:
                     formatted_response = format_results(query_results,request.user_input)
                     tables, cols = extract_tables_and_columns(sql_query)
@@ -83,13 +81,10 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
                 except Exception as e:
                     logger.debug(traceback.format_exc())
                     raise HTTPException(status_code=500, detail="Failed to format query results")
-                
+
             else:
                 tables, cols = extract_tables_and_columns(sql_query)
                 formatted_response = "You can download the Excel File"
-
-        
-            
 
             conversation_id = generate_id()
             logger.debug(f"Generated conversation ID: {conversation_id}")
@@ -99,7 +94,6 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
                 "conversation_id": conversation_id,
                 "query": request.user_input,
                 "response": formatted_response,
-                # "visualization": chart_img,
                 "timestamp": datetime.utcnow().isoformat(),
                 "data_type": tables,
                 "cols": cols,
@@ -119,10 +113,7 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
                     raise HTTPException(status_code=500, detail="Failed to update conversation history")
 
                 response_data = {
-                    # "sql_query": sql_query,
                     "results": formatted_response,
-                    # "chart_type": chart_type,
-                    # "chart_image_url": chart_img,
                     "message": "",
                     "thread_id": request.thread_id,
                     "conversation_count": append_result["total_conversations"],
@@ -134,7 +125,7 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
             else:
                 thread_id = generate_id()
                 logger.info(f"Creating new thread with ID: {thread_id}")
-                
+
                 try:
                     insert_into_threads(thread_id, admin_id, request.user_input)
                     insert_into_conversations(thread_id, admin_id, conversation_record)
@@ -159,29 +150,38 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
                     # Continue even if Redis fails, as it might be a caching layer
 
                 response_data = {
-                    # "sql_query": sql_query,
                     "results": formatted_response,
-                    # "chart_type": chart_type,
-                    # "chart_image_url": chart_img,
                     "message": "",
                     "thread_id": thread_id,
                     "conversation_id": conversation_id,
                     "excel_path": EXCEL_STORAGE_PATH+f"/{conversation_id}"
                 }
 
-            # Generate Excel file
-            try:
-                await generate_excel(conversation_id, query_results)
-            except Exception as e:
-                logger.error(f"Excel generation error: {str(e)}")
-                logger.debug(traceback.format_exc())
-                # Continue even if Excel generation fails
+            # Condition for larger data
+            if len(query_results) > 100:
+                logger.info("Data is huge more than 100")
+                message = "The data has been sent to your email address, please check it"
+                excel_file_path = os.path.join(EXCEL_STORAGE_PATH, f"{conversation_id}.xlsx")
+                password = admin_email[:4]
+
+                # Background tasks:
+                background_tasks.add_task(generate_excel, conversation_id, query_results)  # Ensure Excel is created
+                background_tasks.add_task(send_email_with_attachment, admin_email, excel_file_path, password)
+
+            else:
+                # Generate Excel file
+                try:
+                    await generate_excel(conversation_id, query_results)
+                except Exception as e:
+                    logger.error(f"Excel generation error: {str(e)}")
+                    logger.debug(traceback.format_exc())
+                    # Continue even if Excel generation fails
 
             return response_data
         else:
             logger.warning(f"Invalid SQL query generated: {sql_query}")
             raise HTTPException(status_code=400, detail="Failed to generate a valid SQL query")
-            
+
     except HTTPException as he:
         # Re-raise HTTP exceptions as they're already handled
         raise he
@@ -190,12 +190,13 @@ async def process_user_input(request: UserInputRequest, admin: dict = Depends(ge
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="An unexpected error occurred processing your request")
 
+
 @router.get("/download-excel/{conversation_id}/")
 async def download_excel(conversation_id: str, admin: dict = Depends(get_current_admin)):
     """Endpoint to download an Excel file based on conversation ID with authorization check"""
     try:
         logger.info(f"Excel download requested for conversation {conversation_id} by admin {admin['email']}")
-        
+
         file_path = get_excel_path(conversation_id)
         logger.debug(f"Excel file path: {file_path}")
 
@@ -217,11 +218,12 @@ async def download_excel(conversation_id: str, admin: dict = Depends(get_current
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Failed to download Excel file")
 
+
 @router.get("/threads")
 async def fetch_threads_and_conversations(
-    admin: dict = Depends(get_current_admin), 
-    thread_id: str = None, 
-    page: int = 1, 
+    admin: dict = Depends(get_current_admin),
+    thread_id: str = None,
+    page: int = 1,
     limit: int = 10
 ):
     """
@@ -237,7 +239,7 @@ async def fetch_threads_and_conversations(
                 if not conversation_data["conversations"]:
                     logger.warning(f"No conversations found for thread {thread_id}")
                     raise HTTPException(status_code=404, detail="No conversation found for this thread.")
-                
+
                 logger.info(f"Retrieved {len(conversation_data['conversations'])} conversations for thread {thread_id}")
                 return conversation_data
             except HTTPException as he:
@@ -251,7 +253,7 @@ async def fetch_threads_and_conversations(
             try:
                 threads = get_threads_by_admin(admin_id, page, limit)
                 logger.info(f"Retrieved {len(threads) if threads else 0} threads for admin {admin_id}")
-                
+
                 if not threads:
                     return {"message": "No chat history found.", "threads": []}
 
@@ -269,19 +271,20 @@ async def fetch_threads_and_conversations(
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
+
 @router.post("/admin/request-otp/")
 async def request_otp(background_tasks: BackgroundTasks):
     """Generate and send OTP to the configured admin email for registration verification"""
     try:
         logger.info(f"OTP requested for admin email: {config.ADMIN_EMAIL}")
-        
+
         # Generate a 6-digit OTP
         otp = generate_otp(6)
         logger.debug("OTP generated successfully")
-        
+
         # Store OTP in Redis with expiration time (5 minutes)
         expiry_seconds = 1 * 60  # 2 minutes in seconds
-        
+
         try:
             # Create OTP data to store
             otp_data = {
@@ -289,7 +292,7 @@ async def request_otp(background_tasks: BackgroundTasks):
                 "otp": otp,
                 "created_at": datetime.utcnow().isoformat()
             }
-            
+
             # Set the OTP in Redis with expiration
             redis_key = f"otp:{config.ADMIN_EMAIL}"
             redis_client.setex(
@@ -297,20 +300,20 @@ async def request_otp(background_tasks: BackgroundTasks):
                 expiry_seconds,
                 json.dumps(otp_data)
             )
-            
+
             logger.info(f"OTP stored in Redis for {config.ADMIN_EMAIL} with {expiry_seconds}s expiry")
-            
+
         except Exception as redis_error:
             logger.error(f"Redis error storing OTP: {str(redis_error)}")
             logger.debug(traceback.format_exc())
             raise HTTPException(status_code=500, detail="Failed to store OTP")
-        
+
         # Send OTP email in background
         background_tasks.add_task(send_email, config.ADMIN_EMAIL, otp)
         logger.info(f"OTP email queued for sending to {config.ADMIN_EMAIL}")
-        
+
         return {"message": f"OTP sent to {config.ADMIN_EMAIL}", "email": config.ADMIN_EMAIL}
-    
+
     except HTTPException as he:
         # Re-raise HTTP exceptions as they're already handled
         raise he
@@ -319,45 +322,46 @@ async def request_otp(background_tasks: BackgroundTasks):
         logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Failed to generate and send OTP")
 
+
 @router.post("/admin/signup/", response_model=dict)
 async def signup(admin: AdminSignup):
     """Register a new admin account with OTP verification"""
     try:
         logger.info(f"Processing admin signup for {config.ADMIN_EMAIL}")
-        
+
         # Validate OTP
         try:
             # Check if OTP exists and is valid
             redis_key = f"otp:{config.ADMIN_EMAIL}"
             otp_data_str = redis_client.get(redis_key)
-            
+
             if not otp_data_str:
                 logger.warning(f"No OTP found for {config.ADMIN_EMAIL}")
                 raise HTTPException(status_code=400, detail="No OTP found or OTP expired. Please request a new OTP.")
-            
+
             # Parse the stored OTP data
             otp_data = json.loads(otp_data_str)
-            
+
             if otp_data["otp"] != admin.otp:
                 logger.warning(f"Invalid OTP provided for {config.ADMIN_EMAIL}")
                 raise HTTPException(status_code=400, detail="Invalid OTP. Please try again.")
-            
+
             logger.info(f"OTP validation successful for {config.ADMIN_EMAIL}")
-            
+
         except HTTPException as he:
             raise he
         except Exception as e:
             logger.error(f"OTP validation error: {str(e)}")
             logger.debug(traceback.format_exc())
             raise HTTPException(status_code=500, detail="Failed to validate OTP")
-        
+
         # Proceed with admin signup if OTP is valid
         try:
             response = await admin_signup(admin)
             if "error" in response:
                 logger.warning(f"Admin signup failed: {response['error']}")
                 raise HTTPException(status_code=400, detail=response["error"])
-            
+
             logger.info(f"Admin signup successful for {config.ADMIN_EMAIL}")
         except HTTPException as he:
             raise he
@@ -365,7 +369,7 @@ async def signup(admin: AdminSignup):
             logger.error(f"Admin signup error: {str(e)}")
             logger.debug(traceback.format_exc())
             raise HTTPException(status_code=500, detail="Failed to create admin account")
-        
+
         # Delete the used OTP
         try:
             redis_client.delete(redis_key)
@@ -373,7 +377,7 @@ async def signup(admin: AdminSignup):
         except Exception as e:
             logger.error(f"Failed to delete used OTP: {str(e)}")
             # Continue even if OTP deletion fails
-        
+
         return response
     except HTTPException as he:
         # Re-raise HTTP exceptions as they're already handled
