@@ -4,6 +4,7 @@ import google.generativeai as genai
 from app.core.config import config
 import datetime
 from decimal import Decimal
+from app.core.metrics import track_method_performance
 
 # Configure Gemini API
 genai.configure(api_key=config.GEMINI_API_KEY)
@@ -19,7 +20,7 @@ def serialize_dates(obj):
         return obj.decode() if obj.decode(errors="ignore") else obj.hex()
     raise TypeError(f"Type not serializable: {type(obj)}")
 
-
+@track_method_performance('format_results')
 def format_results(results,user_inp):
     # logging.info(results)
     """Formats SQL results into readable text using Gemini."""

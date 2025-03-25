@@ -3,6 +3,7 @@ import logging
 from app.core.config import config
 from pymongo import MongoClient
 from app.core.config import *
+from app.core.metrics import track_method_performance
 
 # Set up logging
 logging.basicConfig(
@@ -53,6 +54,7 @@ def get_db_connection():
         logger.error(f"Unexpected error establishing MySQL connection: {str(e)}")
         raise
 
+@track_method_performance('execute_sql_query')
 def execute_sql_query(query: str):
     """Executes the provided SQL query on MySQL database and returns results as dictionary objects"""
     conn = None

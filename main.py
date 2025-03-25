@@ -1,24 +1,31 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from app.api.endpoints import router
+from app.core.metrics import *
 
-app = FastAPI(title="Loan Chatbot API")
-
-origins = [
-    "http://localhost:5174", 
-    "http://localhost:5173"
-   
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"],  
-)
-
+app = create_app()
 app.include_router(router)
+
+# Middleware for global request tracking
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    
+    # Calculate processing time
+    process_time = time.time() - start_time
+    
+    # Track request metrics
+    APIMetrics.REQUEST_COUNTER.labels(
+        method=request.method, 
+        endpoint=request.url.path, 
+        status=response.status_code
+    ).inc()
+    
+    APIMetrics.RESPONSE_TIME.labels(
+        method=request.method, 
+        endpoint=request.url.path
+    ).observe(process_time)
+    
+    return response
 
 if __name__ == "__main__":
     import uvicorn

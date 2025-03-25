@@ -15,9 +15,9 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 
 # Define the Excel storage path
-EXCEL_STORAGE_PATH = os.getenv("EXCEL_STORAGE_PATH", "/home/Tejasvp/AdminBot/fastapi-adminbot/excel_files")
+EXCEL_STORAGE_PATH = os.getenv("EXCEL_STORAGE_PATH", "/home/praadnyah/AdminBot/fastapi-adminbot/excel_files")
 # Define the Excel storage path
-CHARTS_DIR = os.getenv("CHARTS_DIR", "/home/Tejasvp/AdminBot/fastapi-adminbot/charts")
+CHARTS_DIR = os.getenv("CHARTS_DIR", "/home/praadnyah/AdminBot/fastapi-adminbot/charts")
 
 class Config:
     DB_HOST = os.getenv("DB_HOST")

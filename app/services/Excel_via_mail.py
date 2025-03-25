@@ -9,12 +9,11 @@ import traceback
 import subprocess  # For PDF password protection
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
-
-
-
+from app.core.metrics import track_method_performance
 
 logger = logging.getLogger(__name__)
 
+@track_method_performance('send_email_with_attachment')
 def send_email_with_attachment(recipient_email: str, file_path: str, password: str):
     """Sends an email with an Excel or PDF attachment, password-protected."""
     try:

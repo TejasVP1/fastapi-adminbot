@@ -5,6 +5,7 @@ import spacy
 from thefuzz import fuzz  # For fuzzy matching
 from app.core.config import config
 from app.services.redis_service import get_last_n_conversations
+from app.core.metrics import track_method_performance
 
 # Load spaCy NLP model
 nlp = spacy.load("en_core_web_sm")
@@ -119,6 +120,7 @@ def classify_query(user_input: str) -> str:
     # **6️⃣ If No Match, It's Unwanted**
     return "unwanted"
 
+@track_method_performance('generate_sql')
 def generate_sql(user_input: str, thread_id: str = None) -> str:
     """Generates SQL query using Gemini AI with proper classification checks."""
 
