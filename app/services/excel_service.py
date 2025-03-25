@@ -3,10 +3,12 @@ import os
 from app.core.config import EXCEL_STORAGE_PATH
 from app.services.redis_service import store_excel_path, get_excel_path
 import logging
+from app.core.metrics import track_method_performance
 
 # Ensure the storage directory exists
 os.makedirs(EXCEL_STORAGE_PATH, exist_ok=True)
 
+@track_method_performance('generate_excel')
 async def generate_excel(conversation_id: str, data: list):
     """
     Asynchronously generate an Excel file from query results.

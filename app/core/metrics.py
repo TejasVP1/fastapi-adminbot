@@ -4,6 +4,7 @@ from starlette_exporter import PrometheusMiddleware, handle_metrics
 from prometheus_client import Counter, Histogram
 import time
 import traceback
+import asyncio
 
 # Custom metrics for detailed monitoring
 class APIMetrics:
@@ -60,35 +61,30 @@ def create_app():
     
     return app
 
+
 def track_method_performance(method_name):
-    """
-    Decorator to track method execution time
-    
-    Usage:
-    @track_method_performance('generate_sql')
-    def generate_sql(...):
-        # method implementation
-    """
     def decorator(func):
-        async def wrapper(*args, **kwargs):
+        async def async_wrapper(*args, **kwargs):
             start_time = time.time()
             try:
                 result = await func(*args, **kwargs)
                 execution_time = time.time() - start_time
-                
-                # Record method execution time
-                APIMetrics.METHOD_EXECUTION_TIME.labels(
-                    method_name=method_name
-                ).observe(execution_time)
-                
+                APIMetrics.METHOD_EXECUTION_TIME.labels(method_name=method_name).observe(execution_time)
                 return result
             except Exception as e:
-                # Record error
-                APIMetrics.ERROR_COUNTER.labels(
-                    method=func.__name__, 
-                    endpoint=method_name, 
-                    error_type=type(e).__name__
-                ).inc()
+                APIMetrics.ERROR_COUNTER.labels(method=func.__name__, endpoint=method_name, error_type=type(e).__name__).inc()
                 raise
-        return wrapper
+
+        def sync_wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                execution_time = time.time() - start_time
+                APIMetrics.METHOD_EXECUTION_TIME.labels(method_name=method_name).observe(execution_time)
+                return result
+            except Exception as e:
+                APIMetrics.ERROR_COUNTER.labels(method=func.__name__, endpoint=method_name, error_type=type(e).__name__).inc()
+                raise
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
     return decorator
