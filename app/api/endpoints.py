@@ -62,7 +62,7 @@ async def process_user_input(request: UserInputRequest, background_tasks: Backgr
             return {"message": "I will answer only loan-related questions."}
         elif sql_query.lower() == "restricted":
             return {"message": "You can only read the data; modifications or creations are not allowed."}
-        elif sql_query.lower() == "sensitive":
+        elif sql_query.lower() == "ensitive":
             return {"message": "I won't provide any sensitive data of users."}
 
         elif sql_query.lower().startswith("select"):
